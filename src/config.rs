@@ -2,6 +2,8 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
 
+use crate::git;
+
 /// Configuration for file operations during worktree creation
 #[derive(Debug, Deserialize, Serialize, Default)]
 pub struct FileConfig {
@@ -81,7 +83,13 @@ impl Config {
             let config: Config = serde_yaml::from_str(&contents)?;
             Ok(config)
         } else {
-            // Return default configuration if file doesn't exist
+            // No config file found. Generate default, checking for Claude context.
+            if let Ok(repo_root) = git::get_repo_root() {
+                if repo_root.join("CLAUDE.md").exists() {
+                    return Ok(Config::claude_default());
+                }
+            }
+            // Fallback to standard default
             Ok(Config::default())
         }
     }
@@ -97,6 +105,29 @@ impl Config {
             panes: vec![
                 PaneConfig {
                     command: shell.clone(),
+                    focus: true,
+                    split: None,
+                },
+                PaneConfig {
+                    command: "clear".to_string(),
+                    focus: false,
+                    split: Some(SplitDirection::Horizontal),
+                },
+            ],
+            post_create: vec![],
+            files: FileConfig::default(),
+        }
+    }
+
+    /// Generate a default configuration for a Claude-enabled project.
+    fn claude_default() -> Self {
+        println!("Found CLAUDE.md, setting up for Claude CLI...");
+        Config {
+            main_branch: None,
+            worktree_dir: None,
+            panes: vec![
+                PaneConfig {
+                    command: "claude".to_string(),
                     focus: true,
                     split: None,
                 },
