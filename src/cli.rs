@@ -107,9 +107,9 @@ enum Commands {
     /// Remove a worktree, tmux window, and branch without merging
     #[command(alias = "rm")]
     Remove {
-        /// Name of the branch to remove
+        /// Name of the branch to remove (defaults to current branch)
         #[arg(value_parser = WorktreeBranchParser::new())]
-        branch_name: String,
+        branch_name: Option<String>,
 
         /// Skip confirmation and ignore uncommitted changes
         #[arg(short, long)]
@@ -150,7 +150,7 @@ pub fn run() -> Result<()> {
             branch_name,
             force,
             delete_remote,
-        } => remove_worktree(&branch_name, force, delete_remote),
+        } => remove_worktree(branch_name.as_deref(), force, delete_remote),
         Commands::List => list_worktrees(),
         Commands::Init => config::Config::init(),
         Commands::Completions { shell } => {
@@ -217,12 +217,20 @@ fn merge_worktree(
     Ok(())
 }
 
-fn remove_worktree(branch_name: &str, mut force: bool, delete_remote: bool) -> Result<()> {
+fn remove_worktree(branch_name: Option<&str>, mut force: bool, delete_remote: bool) -> Result<()> {
+    // Determine the branch to remove
+    let branch_to_remove = if let Some(name) = branch_name {
+        name.to_string()
+    } else {
+        // Running from within a worktree - get current branch
+        git::get_current_branch().context("Failed to get current branch")?
+    };
+
     // Handle user confirmation prompt if needed (before calling workflow)
     if !force {
         // First check for uncommitted changes (must be checked before unmerged prompt)
         // to avoid prompting user about unmerged commits only to error on uncommitted changes
-        if let Ok(worktree_path) = git::get_worktree_path(branch_name) {
+        if let Ok(worktree_path) = git::get_worktree_path(&branch_to_remove) {
             if git::has_uncommitted_changes(&worktree_path)? {
                 return Err(anyhow!(
                     "Worktree has uncommitted changes. Use --force to delete anyway."
@@ -234,19 +242,19 @@ fn remove_worktree(branch_name: &str, mut force: bool, delete_remote: bool) -> R
         let main_branch = git::get_default_branch()?;
         let base_branch = git::get_merge_base(&main_branch)?;
         let unmerged_branches = git::get_unmerged_branches(&base_branch)?;
-        let has_unmerged = unmerged_branches.contains(branch_name);
+        let has_unmerged = unmerged_branches.contains(&branch_to_remove);
 
         if has_unmerged {
             println!(
                 "This will delete the worktree, tmux window, and local branch for '{}'.",
-                branch_name
+                branch_to_remove
             );
             if delete_remote {
                 println!("The remote branch will also be deleted.");
             }
             println!(
                 "Warning: Branch '{}' has commits that are not merged into '{}'.",
-                branch_name, base_branch
+                branch_to_remove, base_branch
             );
             println!("This action cannot be undone.");
             print!("Are you sure you want to continue? [y/N] ");
@@ -269,7 +277,7 @@ fn remove_worktree(branch_name: &str, mut force: bool, delete_remote: bool) -> R
     }
 
     let config = config::Config::load()?;
-    let result = workflow::remove(branch_name, force, delete_remote, &config)
+    let result = workflow::remove(&branch_to_remove, force, delete_remote, &config)
         .context("Failed to remove worktree")?;
 
     println!(
