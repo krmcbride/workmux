@@ -35,6 +35,14 @@ multiple AI agents in parallel without conflict.
 cargo install workmux
 ```
 
+## Shell Alias (Recommended)
+
+For faster typing, alias `workmux` to `wm`:
+
+```bash
+alias wm='workmux'
+```
+
 ## Quick start
 
 1. **Initialize configuration (optional)**:
