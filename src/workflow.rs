@@ -71,6 +71,21 @@ pub fn create(branch_name: &str, config: &config::Config) -> Result<CreateResult
     let branch_exists = git::branch_exists(branch_name)?;
     let create_new = !branch_exists;
 
+    // Determine the base for the new branch to ensure consistency with unmerged checks
+    let base_branch_for_creation = if create_new {
+        let main_branch = config
+            .main_branch
+            .as_ref()
+            .map(|s| Ok(s.clone()))
+            .unwrap_or_else(git::get_default_branch)
+            .context("Failed to determine the main branch. Specify it in .workmux.yaml")?;
+
+        let base = git::get_merge_base(&main_branch)?;
+        Some(base)
+    } else {
+        None
+    };
+
     // Determine worktree path: use config.worktree_dir or default to <project>__worktrees pattern
     let repo_root = git::get_repo_root()?;
     let base_dir = if let Some(ref worktree_dir) = config.worktree_dir {
@@ -96,8 +111,13 @@ pub fn create(branch_name: &str, config: &config::Config) -> Result<CreateResult
     let worktree_path = base_dir.join(branch_name);
 
     // Create worktree
-    git::create_worktree(&worktree_path, branch_name, create_new)
-        .context("Failed to create git worktree")?;
+    git::create_worktree(
+        &worktree_path,
+        branch_name,
+        create_new,
+        base_branch_for_creation.as_deref(),
+    )
+    .context("Failed to create git worktree")?;
 
     // Setup the rest of the environment (tmux, files, hooks)
     let options = SetupOptions {

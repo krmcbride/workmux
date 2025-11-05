@@ -94,7 +94,12 @@ pub fn worktree_exists(branch_name: &str) -> Result<bool> {
 }
 
 /// Create a new git worktree
-pub fn create_worktree(worktree_path: &Path, branch_name: &str, create_branch: bool) -> Result<()> {
+pub fn create_worktree(
+    worktree_path: &Path,
+    branch_name: &str,
+    create_branch: bool,
+    base_branch: Option<&str>,
+) -> Result<()> {
     let path_str = worktree_path
         .to_str()
         .ok_or_else(|| anyhow!("Invalid worktree path"))?;
@@ -103,6 +108,9 @@ pub fn create_worktree(worktree_path: &Path, branch_name: &str, create_branch: b
 
     if create_branch {
         cmd = cmd.arg("-b").arg(branch_name).arg(path_str);
+        if let Some(base) = base_branch {
+            cmd = cmd.arg(base);
+        }
     } else {
         cmd = cmd.arg(path_str).arg(branch_name);
     }
@@ -247,6 +255,18 @@ pub fn commit_with_editor(worktree_path: &Path) -> Result<()> {
 
 /// Get the base branch for merge checks, preferring remote tracking branch
 pub fn get_merge_base(main_branch: &str) -> Result<String> {
+    // Try to get the configured upstream tracking branch
+    let upstream_arg = format!("{}@{{upstream}}", main_branch);
+    if let Ok(upstream) = Cmd::new("git")
+        .args(&["rev-parse", "--abbrev-ref", &upstream_arg])
+        .run_and_capture_stdout()
+    {
+        if !upstream.is_empty() {
+            return Ok(upstream);
+        }
+    }
+
+    // Fallback: check if origin/<main_branch> exists
     let remote_main = format!("origin/{}", main_branch);
     if branch_exists(&remote_main)? {
         Ok(remote_main)
