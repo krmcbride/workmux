@@ -55,8 +55,6 @@ impl clap::builder::TypedValueParser for WorktreeBranchParser {
     ) -> Option<Box<dyn Iterator<Item = clap::builder::PossibleValue> + '_>> {
         let branches = self.get_branches();
 
-        // Leaking memory here is a common workaround for clap's 'static lifetime requirement.
-        // This is more efficient than the original implementation.
         let branches_static: Vec<&'static str> = branches
             .into_iter()
             .map(|s| Box::leak(s.into_boxed_str()) as &'static str)
