@@ -249,42 +249,50 @@ impl Config {
         }
 
         let example_config = r#"# workmux project configuration
-# Overrides global settings in ~/.config/workmux/config.yaml
+# For global settings, edit ~/.config/workmux/config.yaml
 
-# The primary branch to merge into (auto-detected if not set)
+# The primary branch to merge into.
+# Default: Auto-detected from remote's HEAD, or falls back to main or master.
 # main_branch: main
 
-# Custom worktree directory for this project
+# Custom directory where worktrees should be created.
+# Can be relative to the repository root or an absolute path.
+# Default: A sibling directory named '<project_name>__worktrees'.
 # worktree_dir: .worktrees
 
-# Custom tmux window prefix for this project
-# window_prefix: proj-
+# Custom prefix for tmux window names.
+# window_prefix: wm-
 
-# Setup commands run after worktree creation
-# Use "<global>" to inherit global hooks (e.g., mise install)
-post_create:
-  # - "<global>"     # Uncomment to run global hooks first
-  - pnpm install
+# Commands to run in the new worktree after it's created.
+# Default: Auto-detects pnpm (`pnpm-lock.yaml`) and runs `pnpm install`.
+# To disable this, set to an empty list: `post_create: []`
+# post_create:
+  # Use "<global>" to inherit hooks from your global config.
+  # - "<global>"
+  # - pnpm install
 
-# Tmux pane layout for this project
-# If not set, uses global panes from ~/.config/workmux/config.yaml
-panes:
-  - command: nvim .
-    focus: true
-  - command: pnpm run dev
-    split: horizontal
+# Custom tmux pane layout for this project.
+# Default: A two-pane layout with your $SHELL
+# panes:
+#   - command: $SHELL
+#     focus: true
+#   - command: clear
+#     split: horizontal
 
-# File operations
+# File operations to perform when creating a worktree.
 files:
-  # Copy files that may differ per worktree
-  copy:
-    - .env.example
+  # Glob patterns for files to copy from the repo root.
+  # Useful for files that need to be unique per worktree.
+  # copy:
+    # - .env
 
-  # Symlink shared resources
-  # Use "<global>" to inherit global patterns
+  # Glob patterns for files/directories to symlink from the repo root.
+  # Ideal for shared resources like dependency caches to save disk space and time.
+  # Use "<global>" to inherit patterns from your global config.
   symlink:
-    # - "<global>"   # Uncomment to include global symlinks
+    # - "<global>"
     - node_modules
+    # - .pnpm-store
 "#;
 
         fs::write(&config_path, example_config)?;
