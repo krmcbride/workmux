@@ -4,6 +4,35 @@ use std::path::Path;
 
 use crate::git;
 
+/// Default script for cleaning up node_modules directories before worktree deletion.
+/// This script moves node_modules to a temporary location and deletes them in the background,
+/// making the workmux remove command return almost instantly.
+const NODE_MODULES_CLEANUP_SCRIPT: &str = r#"#!/bin/bash
+set -euo pipefail
+
+# Create a temporary directory that will be cleaned up on script exit (success or error)
+TRASH_DIR=$(mktemp -d)
+trap 'rm -rf "$TRASH_DIR"' EXIT
+
+# Find and move all node_modules directories
+# -prune prevents descending into node_modules directories
+find . -name "node_modules" -type d -prune -print0 | while IFS= read -r -d '' dir; do
+  # Generate unique name from path: './frontend/node_modules' -> 'frontend_node_modules'
+  unique_name=$(printf '%s\n' "${dir#./}" | tr '/' '_')
+
+  if ! mv -- "$dir" "$TRASH_DIR/$unique_name"; then
+    echo "Warning: Failed to move '$dir'. Check permissions." >&2
+  fi
+done
+
+# Detach the final slow deletion from the script's execution
+if [ -n "$(ls -A "$TRASH_DIR")" ]; then
+  # Disown the trap and start a new background process for deletion
+  trap - EXIT
+  nohup rm -rf "$TRASH_DIR" >/dev/null 2>&1 &
+fi
+"#;
+
 /// Configuration for file operations during worktree creation
 #[derive(Debug, Deserialize, Serialize, Default, Clone)]
 pub struct FileConfig {
@@ -39,6 +68,10 @@ pub struct Config {
     /// Commands to run after creating the worktree
     #[serde(default)]
     pub post_create: Option<Vec<String>>,
+
+    /// Commands to run before deleting the worktree (e.g., for fast cleanup)
+    #[serde(default)]
+    pub pre_delete: Option<Vec<String>>,
 
     /// File operations to perform after creating the worktree
     #[serde(default)]
@@ -113,7 +146,7 @@ impl Config {
         let mut config = global_config.merge(project_config);
 
         // After merging, apply sensible defaults for any values that are not configured.
-        let needs_defaults = config.panes.is_none();
+        let needs_defaults = config.panes.is_none() || config.pre_delete.is_none();
 
         if needs_defaults {
             if let Ok(repo_root) = git::get_repo_root() {
@@ -125,6 +158,17 @@ impl Config {
                         config.panes = Some(Self::claude_default_panes());
                     } else {
                         config.panes = Some(Self::default_panes());
+                    }
+                }
+
+                // Default pre_delete hooks based on package manager
+                if config.pre_delete.is_none() {
+                    let has_node_modules = repo_root.join("pnpm-lock.yaml").exists()
+                        || repo_root.join("package-lock.json").exists()
+                        || repo_root.join("yarn.lock").exists();
+
+                    if has_node_modules {
+                        config.pre_delete = Some(vec![NODE_MODULES_CLEANUP_SCRIPT.to_string()]);
                     }
                 }
             } else {
@@ -221,6 +265,7 @@ impl Config {
 
             // List values with placeholder support
             post_create: merge_vec_with_placeholder(self.post_create, project.post_create),
+            pre_delete: merge_vec_with_placeholder(self.pre_delete, project.pre_delete),
 
             // File config with placeholder support
             files: FileConfig {
@@ -306,6 +351,14 @@ impl Config {
   # Use "<global>" to inherit hooks from your global config.
   # - "<global>"
   # - mise use
+
+# Cleanup commands run before worktree deletion
+# Default: Auto-detects Node.js projects and fast-deletes node_modules in background
+# You can override or disable this behavior:
+# pre_delete:
+#   - echo "Custom cleanup"
+# Or disable:
+# pre_delete: []
 
 # Custom tmux pane layout for this project.
 # Default: A two-pane layout with a shell and clear command

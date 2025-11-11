@@ -562,6 +562,7 @@ pub fn merge(
         &worktree_path,
         true,
         delete_remote,
+        config,
     )?;
 
     // Navigate to the main branch window if it exists
@@ -612,7 +613,14 @@ pub fn remove(
     // The CLI provides a user-friendly confirmation prompt before calling this function
     let prefix = config.window_prefix();
     info!(branch = branch_name, delete_remote, "remove:cleanup start");
-    let cleanup_result = cleanup(prefix, branch_name, &worktree_path, force, delete_remote)?;
+    let cleanup_result = cleanup(
+        prefix,
+        branch_name,
+        &worktree_path,
+        force,
+        delete_remote,
+        config,
+    )?;
 
     // Navigate to the main branch window if it exists
     if tmux::is_running()? && tmux::window_exists(prefix, &main_branch)? {
@@ -633,6 +641,7 @@ pub fn cleanup(
     worktree_path: &Path,
     force: bool,
     delete_remote: bool,
+    config: &config::Config,
 ) -> Result<CleanupResult> {
     info!(
         branch = branch_name,
@@ -672,6 +681,21 @@ pub fn cleanup(
     // Helper closure to perform the actual filesystem and git cleanup.
     // This avoids code duplication while enforcing the correct operational order.
     let perform_fs_git_cleanup = |result: &mut CleanupResult| -> Result<()> {
+        // Run pre-delete hooks before removing the worktree directory
+        if let Some(pre_delete_hooks) = &config.pre_delete {
+            info!(
+                branch = branch_name,
+                count = pre_delete_hooks.len(),
+                "cleanup:running pre-delete hooks"
+            );
+            for command in pre_delete_hooks {
+                // Run the hook with the worktree path as the working directory.
+                // This allows for relative paths like `node_modules` in the command.
+                cmd::shell_command(command, worktree_path)
+                    .with_context(|| format!("Failed to run pre-delete command: '{}'", command))?;
+            }
+        }
+
         // 1. Forcefully remove the worktree directory from the filesystem.
         if worktree_path.exists() {
             std::fs::remove_dir_all(worktree_path).with_context(|| {

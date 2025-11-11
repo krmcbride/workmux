@@ -276,6 +276,11 @@ fn merge_worktree(
 ) -> Result<()> {
     let config = config::Config::load()?;
 
+    // Print status if there are pre-delete hooks
+    if config.pre_delete.as_ref().is_some_and(|v| !v.is_empty()) {
+        println!("Running pre-delete commands...");
+    }
+
     let result = workflow::merge(
         branch_name,
         ignore_uncommitted,
@@ -364,6 +369,12 @@ fn remove_worktree(branch_name: Option<&str>, mut force: bool, delete_remote: bo
     }
 
     let config = config::Config::load()?;
+
+    // Print status if there are pre-delete hooks
+    if config.pre_delete.as_ref().is_some_and(|v| !v.is_empty()) {
+        println!("Running pre-delete commands...");
+    }
+
     let result = workflow::remove(&branch_to_remove, force, delete_remote, &config)
         .context("Failed to remove worktree")?;
 
