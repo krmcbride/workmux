@@ -11,8 +11,9 @@
 
 ---
 
-Giga opinionated zero-friction workflow tool for managing git worktrees and
-tmux windows as isolated development environments.
+Giga opinionated zero-friction workflow tool for managing [git
+worktrees](https://git-scm.com/docs/git-worktree) and tmux windows as isolated
+development environments.
 
 Perfect for running multiple AI agents in parallel without conflict.
 
@@ -359,8 +360,8 @@ workmux init
 ### `workmux open <branch-name>`
 
 Opens a new tmux window for a pre-existing git worktree, setting up the
-configured pane layout and environment. This is useful if you accidentally
-closed the tmux window for a worktree you are still working on.
+configured pane layout and environment. This is useful any time you closed the
+tmux window for a worktree you are still working on.
 
 - `<branch-name>`: Name of the branch that has an existing worktree.
 
@@ -531,6 +532,24 @@ workmux add feature/new-api
 workmux merge refactor/user-model
 workmux merge feature/new-api
 ```
+
+## Tips
+
+### Closing tmux windows
+
+You can close workmux-managed tmux windows using tmux's standard `kill-window`
+command (e.g., `<prefix> &` or `tmux kill-window -t <window-name>`). This will
+properly terminate all processes running in the window's panes. The git worktree
+will remain on disk, and you can reopen a window for it anytime with:
+
+```bash
+workmux open <branch-name>
+```
+
+However, it's recommended to use `workmux merge` or `workmux remove` for
+cleanup instead, as these commands clean up both the tmux window and the git
+worktree together. Use `workmux list` to see which worktrees have detached tmux
+windows.
 
 ## Shell completions
 
