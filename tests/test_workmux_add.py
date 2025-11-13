@@ -437,6 +437,76 @@ def test_add_from_specific_branch(
     assert window_name in existing_windows
 
 
+def test_add_reuses_existing_branch(
+    isolated_tmux_server: TmuxEnvironment, workmux_exe_path: Path, repo_path: Path
+):
+    """Verifies that `workmux add` reuses an existing branch instead of creating a new one."""
+    env = isolated_tmux_server
+    branch_name = "feature-existing-branch"
+    commit_message = "Existing branch changes"
+
+    write_workmux_config(repo_path)
+
+    # Remember the default branch so we can switch back after preparing the feature branch
+    current_branch_result = env.run_command(
+        ["git", "branch", "--show-current"], cwd=repo_path
+    )
+    default_branch = current_branch_result.stdout.strip()
+
+    # Create and populate an existing branch
+    env.run_command(["git", "checkout", "-b", branch_name], cwd=repo_path)
+    create_commit(env, repo_path, commit_message)
+    branch_head = (
+        env.run_command(["git", "rev-parse", "HEAD"], cwd=repo_path).stdout.strip()
+    )
+
+    # Switch back to the default branch so workmux add runs from a typical state
+    env.run_command(["git", "checkout", default_branch], cwd=repo_path)
+
+    run_workmux_add(env, workmux_exe_path, repo_path, branch_name)
+
+    worktree_path = get_worktree_path(repo_path, branch_name)
+    expected_file = (
+        worktree_path / f"file_for_{commit_message.replace(' ', '_').replace(':', '')}.txt"
+    )
+    assert expected_file.exists()
+    assert expected_file.read_text() == f"content for {commit_message}"
+
+    # The branch should still point to the commit we created earlier
+    branch_tip = (
+        env.run_command(["git", "rev-parse", branch_name], cwd=repo_path).stdout.strip()
+    )
+    assert branch_tip == branch_head
+
+
+def test_add_fails_when_worktree_exists(
+    isolated_tmux_server: TmuxEnvironment, workmux_exe_path: Path, repo_path: Path
+):
+    """Verifies that `workmux add` fails with a clear message if the worktree already exists."""
+    env = isolated_tmux_server
+    branch_name = "feature-existing-worktree"
+    existing_worktree_path = repo_path.parent / "existing_worktree_dir"
+
+    write_workmux_config(repo_path)
+
+    # Create the branch and then return to the default branch
+    env.run_command(["git", "checkout", "-b", branch_name], cwd=repo_path)
+    env.run_command(["git", "checkout", "main"], cwd=repo_path)
+
+    # Manually create a git worktree for the branch to simulate the pre-existing state
+    env.run_command(
+        ["git", "worktree", "add", str(existing_worktree_path), branch_name],
+        cwd=repo_path,
+    )
+
+    with pytest.raises(AssertionError) as excinfo:
+        run_workmux_add(env, workmux_exe_path, repo_path, branch_name)
+
+    stderr = str(excinfo.value)
+    assert f"A worktree for branch '{branch_name}' already exists." in stderr
+    assert "Use 'workmux open" in stderr
+
+
 def test_add_copies_single_file(
     isolated_tmux_server: TmuxEnvironment, workmux_exe_path: Path, repo_path: Path
 ):
