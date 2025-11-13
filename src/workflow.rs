@@ -6,6 +6,9 @@ use std::{thread, time::Duration};
 use crate::{cmd, config, git, tmux};
 use tracing::{debug, info, trace, warn};
 
+use fs_extra::dir as fs_dir;
+use fs_extra::file as fs_file;
+
 const WINDOW_CLOSE_DELAY_MS: u64 = 300;
 
 /// Result of creating a worktree
@@ -336,7 +339,7 @@ fn handle_file_operations(
             for entry in glob::glob(&full_pattern)? {
                 let source_path = entry?;
 
-                // Validate that the resolved source path is within the repository root
+                // Validate that the resolved source path stays within the repository root
                 let canon_source_path = source_path.canonicalize().with_context(|| {
                     format!("Failed to canonicalize source path: {:?}", source_path)
                 })?;
@@ -348,29 +351,54 @@ fn handle_file_operations(
                     ));
                 }
 
-                if source_path.is_dir() {
-                    return Err(anyhow!(
-                        "Cannot copy directory '{}'. Only files are supported for copy operations. \
-                        Consider using symlink instead, or specify individual files.",
-                        source_path.display()
-                    ));
-                }
-                let relative_path = source_path.strip_prefix(repo_root)?;
+                let relative_path = source_path.strip_prefix(repo_root).with_context(|| {
+                    format!(
+                        "Path '{}' is outside the repository root '{}', which is not allowed.",
+                        source_path.display(),
+                        repo_root.display()
+                    )
+                })?;
                 let dest_path = worktree_path.join(relative_path);
 
-                if let Some(parent) = dest_path.parent() {
-                    fs::create_dir_all(parent).with_context(|| {
-                        format!("Failed to create parent directory for {:?}", dest_path)
+                if source_path.is_dir() {
+                    // Create destination parent directory
+                    if let Some(parent) = dest_path.parent() {
+                        fs::create_dir_all(parent)?;
+                    }
+                    // Use fs_extra::dir::copy which handles recursion and symlinks correctly
+                    let mut dir_options = fs_dir::CopyOptions::new();
+                    dir_options.overwrite = true;
+                    dir_options.content_only = true;
+                    fs::create_dir_all(&dest_path)?; // Ensure dest exists
+                    fs_dir::copy(&source_path, &dest_path, &dir_options).with_context(|| {
+                        format!(
+                            "Failed to copy directory {:?} to {:?}",
+                            source_path, dest_path
+                        )
                     })?;
+                    trace!(
+                        from = %source_path.display(),
+                        to = %dest_path.display(),
+                        "file_operations:copied directory"
+                    );
+                } else {
+                    // Copy single file
+                    if let Some(parent) = dest_path.parent() {
+                        fs::create_dir_all(parent).with_context(|| {
+                            format!("Failed to create parent directory for {:?}", dest_path)
+                        })?;
+                    }
+                    let mut options = fs_file::CopyOptions::new();
+                    options.overwrite = true;
+                    fs_file::copy(&source_path, &dest_path, &options).with_context(|| {
+                        format!("Failed to copy file {:?} to {:?}", source_path, dest_path)
+                    })?;
+                    trace!(
+                        from = %source_path.display(),
+                        to = %dest_path.display(),
+                        "file_operations:copied file"
+                    );
                 }
-                fs::copy(&source_path, &dest_path).with_context(|| {
-                    format!("Failed to copy {:?} to {:?}", source_path, dest_path)
-                })?;
-                trace!(
-                    from = %source_path.display(),
-                    to = %dest_path.display(),
-                    "file_operations:copied"
-                );
             }
         }
     }

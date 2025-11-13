@@ -151,7 +151,7 @@ panes:
   window opens. These block window creation, so keep them short (e.g., copying
   config files).
 - `files`: File operations to perform on worktree creation
-  - `copy`: List of glob patterns for files to copy
+  - `copy`: List of glob patterns for files/directories to copy
   - `symlink`: List of glob patterns for files/directories to symlink
 
 **Default behavior:**
