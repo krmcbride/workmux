@@ -8,7 +8,11 @@ default:
     @just --list
 
 # Run format, clippy-fix, build, and tests
-check: format clippy-fix build test
+check: parallel-checks test
+
+# Run format, clippy-fix, and build in parallel
+[parallel]
+parallel-checks: format clippy-fix build
 
 # Format Rust and Python files
 format:
@@ -31,8 +35,8 @@ build:
 run *ARGS:
     cargo run -- "$@"
 
-# Run Python tests
-test:
+# Run Python tests (depends on build)
+test: build
     #!/usr/bin/env bash
     set -euo pipefail
     source tests/venv/bin/activate
